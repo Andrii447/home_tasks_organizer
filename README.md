@@ -8,7 +8,7 @@
 
 ## Реалізовані екрани
 
-| Екран | Файл | Вимога (ЛР №2) |
+| Екран | Файл | Вимога |
 |---|---|---|
 | Вхід | `lib/features/auth/login_screen.dart` | FR-02 |
 | Реєстрація | `lib/features/auth/register_screen.dart` | FR-01 |
