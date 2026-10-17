@@ -127,4 +127,22 @@ void main() {
     expect(find.text('Вкажіть ім\'я'), findsOneWidget);
     expect(find.text('Паролі не збігаються'), findsOneWidget);
   });
+
+  testWidgets('renaming the household does not crash', (tester) async {
+    await pumpApp(
+      tester,
+      signedIn: const AppUser(uid: 'u1', email: 'andrii@dimplan.ua'),
+    );
+    await tester.tap(find.text('Мій дім').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Змінити назву'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).last, 'Наша хата');
+    await tester.tap(find.text('Зберегти'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Наша хата'), findsOneWidget);
+  });
 }

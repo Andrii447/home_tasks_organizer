@@ -27,43 +27,10 @@ class _MyHouseholdScreenState extends State<MyHouseholdScreen> {
   }
 
   Future<void> _rename() async {
-    final controller = TextEditingController(text: _name);
-    final formKey = GlobalKey<FormState>();
-    void submit(BuildContext context) {
-      if (formKey.currentState!.validate()) {
-        Navigator.of(context).pop(controller.text.trim());
-      }
-    }
-
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Змінити назву'),
-        content: SizedBox(
-          width: 360,
-          child: Form(
-            key: formKey,
-            child: AppTextField(
-              label: 'Назва домогосподарства',
-              controller: controller,
-              validator: Validators.householdName,
-              onSubmitted: (_) => submit(context),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Скасувати'),
-          ),
-          TextButton(
-            onPressed: () => submit(context),
-            child: const Text('Зберегти'),
-          ),
-        ],
-      ),
+      builder: (_) => _RenameDialog(initial: _name),
     );
-    controller.dispose();
     if (result != null && result.isNotEmpty) setState(() => _name = result);
   }
 
@@ -290,6 +257,60 @@ class _MemberTile extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Діалог зміни назви. Контролер належить State діалогу й знищується
+/// в dispose(), тобто лише після завершення анімації закриття.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState!.validate()) {
+      Navigator.of(context).pop(_controller.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Змінити назву'),
+      content: SizedBox(
+        width: 360,
+        child: Form(
+          key: _formKey,
+          child: AppTextField(
+            label: 'Назва домогосподарства',
+            controller: _controller,
+            validator: Validators.householdName,
+            onSubmitted: (_) => _submit(),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Скасувати'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('Зберегти')),
+      ],
     );
   }
 }
