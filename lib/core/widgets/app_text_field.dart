@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Стилізоване текстове поле.
+/// Стилізоване поле форми з валідацією.
 ///
 /// * за замовчуванням підпис «вирізає» рамку (екрани авторизації);
 /// * `labelAbove` — підпис над полем (форми, профіль);
@@ -21,6 +21,9 @@ class AppTextField extends StatefulWidget {
     this.suffixIcon,
     this.keyboardType,
     this.textInputAction,
+    this.autofillHints,
+    this.validator,
+    this.onChanged,
     this.onSubmitted,
   });
 
@@ -35,6 +38,9 @@ class AppTextField extends StatefulWidget {
   final Widget? suffixIcon;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final Iterable<String>? autofillHints;
+  final FormFieldValidator<String>? validator;
+  final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
   @override
@@ -60,18 +66,22 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   Widget build(BuildContext context) {
-    final field = TextField(
+    final field = TextFormField(
       controller: widget.controller,
       obscureText: _hidden,
       enabled: widget.enabled,
       maxLines: widget.obscure ? 1 : widget.maxLines,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
-      onSubmitted: widget.onSubmitted,
+      autofillHints: widget.autofillHints,
+      validator: widget.validator,
+      onChanged: widget.onChanged,
+      onFieldSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
         labelText: widget.labelAbove ? null : widget.label,
         hintText: widget.hint,
         suffixIcon: _suffix(),
+        errorMaxLines: 2,
         fillColor: widget.enabled ? null : AppColors.disabledField,
       ),
     );

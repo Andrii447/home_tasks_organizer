@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
 import '../../data/mock_data.dart';
 import '../../data/models.dart';
@@ -27,15 +28,27 @@ class _MyHouseholdScreenState extends State<MyHouseholdScreen> {
 
   Future<void> _rename() async {
     final controller = TextEditingController(text: _name);
+    final formKey = GlobalKey<FormState>();
+    void submit(BuildContext context) {
+      if (formKey.currentState!.validate()) {
+        Navigator.of(context).pop(controller.text.trim());
+      }
+    }
+
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Змінити назву'),
         content: SizedBox(
           width: 360,
-          child: AppTextField(
-            label: 'Назва домогосподарства',
-            controller: controller,
+          child: Form(
+            key: formKey,
+            child: AppTextField(
+              label: 'Назва домогосподарства',
+              controller: controller,
+              validator: Validators.householdName,
+              onSubmitted: (_) => submit(context),
+            ),
           ),
         ),
         actions: [
@@ -44,7 +57,7 @@ class _MyHouseholdScreenState extends State<MyHouseholdScreen> {
             child: const Text('Скасувати'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            onPressed: () => submit(context),
             child: const Text('Зберегти'),
           ),
         ],

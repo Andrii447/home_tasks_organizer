@@ -3,6 +3,7 @@ export 'app_card.dart';
 export 'app_logo.dart';
 export 'app_text_field.dart';
 export 'auth_scaffold.dart';
+export 'form_message.dart';
 export 'page_header.dart';
 export 'status_chip.dart';
 export 'user_avatar.dart';

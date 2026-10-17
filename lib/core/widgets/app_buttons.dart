@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 
 /// Основна заповнена кнопка (зелена, «пігулка»).
+///
+/// `loading` показує індикатор і блокує повторне натискання.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -10,23 +12,43 @@ class PrimaryButton extends StatelessWidget {
     required this.onPressed,
     this.icon,
     this.expanded = false,
+    this.loading = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool expanded;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(label);
-    final button = icon == null
-        ? FilledButton(onPressed: onPressed, child: text)
-        : FilledButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon, size: 20),
-            label: text,
-          );
+    final onTap = loading ? null : onPressed;
+    final Widget button;
+    if (loading) {
+      button = FilledButton(
+        onPressed: null,
+        style: FilledButton.styleFrom(
+          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.7),
+          disabledForegroundColor: Colors.white,
+        ),
+        child: const SizedBox.square(
+          dimension: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.4,
+            color: Colors.white,
+          ),
+        ),
+      );
+    } else if (icon == null) {
+      button = FilledButton(onPressed: onTap, child: Text(label));
+    } else {
+      button = FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 20),
+        label: Text(label),
+      );
+    }
     return expanded ? SizedBox(width: double.infinity, child: button) : button;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_scope.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
@@ -35,7 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _addTask() async {
     final created = await showTaskFormDialog(context);
-    if (created != null) setState(() => _tasks.add(created));
+    if (created == null || !mounted) return;
+    setState(() => _tasks.add(created));
+    AppScope.of(context).analytics
+        .logEvent('task_created', {'status': created.status.name});
   }
 
   Future<void> _editTask(HomeTask task) async {
@@ -66,7 +70,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
-    if (ok == true) setState(() => _tasks.removeWhere((t) => t.id == task.id));
+    if (ok != true || !mounted) return;
+    setState(() => _tasks.removeWhere((t) => t.id == task.id));
+    AppScope.of(context).analytics.logEvent('task_deleted');
   }
 
   Widget _statusDropdown() => _FilterDropdown<TaskStatus?>(

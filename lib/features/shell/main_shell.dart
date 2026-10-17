@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_scope.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
@@ -33,7 +34,30 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  void _select(int i) => setState(() => _index = i);
+  static const _screenNames = ['home', 'my_household', 'profile'];
+
+  bool _firstScreenLogged = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Викликається і при зміні розміру вікна — логуємо лише перший раз.
+    if (!_firstScreenLogged) {
+      _firstScreenLogged = true;
+      _logScreen();
+    }
+  }
+
+  // Вкладки перемикаються через IndexedStack без маршрутів Navigator,
+  // тому перегляд екрана реєструємо вручну.
+  void _logScreen() =>
+      AppScope.of(context).analytics.logScreen(_screenNames[_index]);
+
+  void _select(int i) {
+    if (i == _index) return;
+    setState(() => _index = i);
+    _logScreen();
+  }
 
   // IndexedStack зберігає стан сторінок під час перемикання розділів.
   Widget get _pages => IndexedStack(

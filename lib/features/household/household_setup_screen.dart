@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../core/navigation/app_routes.dart';
+import '../../core/app_scope.dart';
+import '../../core/utils/validators.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
@@ -14,6 +15,8 @@ class HouseholdSetupScreen extends StatefulWidget {
 }
 
 class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
+  final _createForm = GlobalKey<FormState>();
+  final _joinForm = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _code = TextEditingController();
 
@@ -24,24 +27,42 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
     super.dispose();
   }
 
-  void _continue() =>
-      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+  // Домогосподарства зберігатимуться у Cloud Firestore (наступні лаби),
+  // тому тут лише валідація й перехід на головну (AuthGate під цим екраном).
+  void _continue(GlobalKey<FormState> form, String event) {
+    if (!form.currentState!.validate()) return;
+    AppScope.of(context).analytics.logEvent(event);
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
     final create = _SetupCard(
       title: 'Створити дім',
       subtitle: 'Створіть новий простір для спільних домашніх справ.',
-      field: AppTextField(label: 'Назва домогосподарства', controller: _name),
+      formKey: _createForm,
+      field: AppTextField(
+        label: 'Назва домогосподарства',
+        controller: _name,
+        validator: Validators.householdName,
+        onSubmitted: (_) => _continue(_createForm, 'household_created'),
+      ),
       buttonLabel: 'Створити',
-      onPressed: _continue,
+      onPressed: () => _continue(_createForm, 'household_created'),
     );
     final join = _SetupCard(
       title: 'Приєднатися до дому',
       subtitle: 'Введіть код, який вам надіслав учасник домогосподарства.',
-      field: AppTextField(label: 'Код приєднання', controller: _code),
+      formKey: _joinForm,
+      field: AppTextField(
+        label: 'Код приєднання',
+        controller: _code,
+        hint: 'ДІМ-XXXX-00',
+        validator: Validators.inviteCode,
+        onSubmitted: (_) => _continue(_joinForm, 'household_joined'),
+      ),
       buttonLabel: 'Приєднатися',
-      onPressed: _continue,
+      onPressed: () => _continue(_joinForm, 'household_joined'),
     );
 
     return AuthScaffold(
@@ -80,6 +101,7 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
 
 class _SetupCard extends StatelessWidget {
   const _SetupCard({
+    required this.formKey,
     required this.title,
     required this.subtitle,
     required this.field,
@@ -87,6 +109,7 @@ class _SetupCard extends StatelessWidget {
     required this.onPressed,
   });
 
+  final GlobalKey<FormState> formKey;
   final String title;
   final String subtitle;
   final Widget field;
@@ -113,7 +136,7 @@ class _SetupCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          field,
+          Form(key: formKey, child: field),
           const SizedBox(height: 16),
           PrimaryButton(
             label: buttonLabel,

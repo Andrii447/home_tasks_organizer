@@ -1,7 +1,7 @@
 abstract final class AppRoutes {
-  static const login = '/login';
+  /// Корінь: AuthGate показує вхід або головну залежно від сеансу.
+  static const root = '/';
   static const register = '/register';
   static const forgotPassword = '/forgot-password';
   static const householdSetup = '/household-setup';
-  static const home = '/home';
 }

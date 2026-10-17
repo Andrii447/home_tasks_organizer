@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_scope.dart';
 import '../../core/navigation/app_routes.dart';
+import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
+import '../../data/repositories/auth_failure.dart';
 import 'auth_footer_link.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,8 +15,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -22,8 +28,26 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // Без бізнес-логіки: «Увійти» одразу відкриває головну сторінку.
-  void _submit() => Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+  Future<void> _submit() async {
+    if (_loading) return;
+    setState(() => _error = null);
+    if (!_formKey.currentState!.validate()) return;
+
+    final scope = AppScope.of(context);
+    setState(() => _loading = true);
+    try {
+      await scope.auth.signIn(
+        email: _email.text.trim(),
+        password: _password.text,
+      );
+      await scope.analytics.logLogin();
+      // Після успішного входу AuthGate сам покаже головну сторінку.
+    } on AuthFailure catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,34 +57,61 @@ class _LoginScreenState extends State<LoginScreen> {
         title: 'Вхід до ДімПлану',
         subtitle: 'Увійдіть, щоб продовжити планування вашого дому.',
         children: [
-          AppTextField(
-            label: 'Email',
-            controller: _email,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: 20),
-          AppTextField(
-            label: 'Пароль',
-            controller: _password,
-            obscure: true,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
+          Form(
+            key: _formKey,
+            child: AutofillGroup(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppTextField(
+                    label: 'Email',
+                    controller: _email,
+                    enabled: !_loading,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    validator: Validators.email,
+                  ),
+                  const SizedBox(height: 20),
+                  AppTextField(
+                    label: 'Пароль',
+                    controller: _password,
+                    enabled: !_loading,
+                    obscure: true,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.password],
+                    validator: Validators.passwordPresent,
+                    onSubmitted: (_) => _submit(),
+                  ),
+                ],
+              ),
+            ),
           ),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () => nav.pushNamed(AppRoutes.forgotPassword),
+              onPressed: _loading
+                  ? null
+                  : () => nav.pushNamed(AppRoutes.forgotPassword),
               child: const Text('Забули пароль?'),
             ),
           ),
-          const SizedBox(height: 8),
-          PrimaryButton(label: 'Увійти', onPressed: _submit, expanded: true),
+          if (_error != null) ...[
+            FormMessage(_error!),
+            const SizedBox(height: 16),
+          ] else
+            const SizedBox(height: 8),
+          PrimaryButton(
+            label: 'Увійти',
+            onPressed: _submit,
+            loading: _loading,
+            expanded: true,
+          ),
           const SizedBox(height: 16),
           AuthFooterLink(
             text: 'Ще не маєте акаунта?',
             action: 'Зареєструватися',
-            onPressed: () => nav.pushReplacementNamed(AppRoutes.register),
+            onPressed: () => nav.pushNamed(AppRoutes.register),
           ),
         ],
       ),

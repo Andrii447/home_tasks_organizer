@@ -32,7 +32,7 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
   late DateTime? _dueDate = widget.task?.dueDate;
   late String? _assigneeId = widget.task?.assigneeId;
   late TaskStatus _status = widget.task?.status ?? TaskStatus.planned;
-  bool _titleError = false;
+  final _formKey = GlobalKey<FormState>();
 
   bool get _isEdit => widget.task != null;
 
@@ -55,11 +55,8 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
   }
 
   void _save() {
+    if (!_formKey.currentState!.validate()) return;
     final title = _title.text.trim();
-    if (title.isEmpty) {
-      setState(() => _titleError = true);
-      return;
-    }
     Navigator.of(context).pop(
       HomeTask(
         id: widget.task?.id ?? 'new_${DateTime.now().microsecondsSinceEpoch}',
@@ -122,114 +119,120 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
         constraints: const BoxConstraints(maxWidth: 560),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isEdit ? 'Редагування завдання' : 'Нове завдання',
+                            style: textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Додайте деталі та призначте відповідального.',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Закрити',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                AppTextField(
+                  label: 'Назва завдання',
+                  labelAbove: true,
+                  required: true,
+                  controller: _title,
+                  hint: 'Наприклад, полити квіти',
+                  validator: (v) {
+                    final t = v?.trim() ?? '';
+                    if (t.isEmpty) return 'Вкажіть назву завдання';
+                    if (t.length > 80) {
+                      return 'Назва занадто довга (до 80 символів)';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  label: 'Опис (необов\'язково)',
+                  labelAbove: true,
+                  controller: _description,
+                  hint: 'Додайте короткий опис завдання',
+                  maxLines: 3,
+                  validator: (v) => (v?.length ?? 0) > 500
+                      ? 'Опис занадто довгий (до 500 символів)'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, c) {
+                    if (c.maxWidth < 440) {
+                      return Column(
+                        children: [
+                          dateField,
+                          const SizedBox(height: 16),
+                          assigneeField,
+                        ],
+                      );
+                    }
+                    return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _isEdit ? 'Редагування завдання' : 'Нове завдання',
-                          style: textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Додайте деталі та призначте відповідального.',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Закрити',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              AppTextField(
-                label: 'Назва завдання',
-                labelAbove: true,
-                required: true,
-                controller: _title,
-                hint: 'Наприклад, полити квіти',
-              ),
-              if (_titleError)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Вкажіть назву завдання',
-                    style: TextStyle(color: AppColors.danger, fontSize: 12),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              AppTextField(
-                label: 'Опис (необов\'язково)',
-                labelAbove: true,
-                controller: _description,
-                hint: 'Додайте короткий опис завдання',
-                maxLines: 3,
-              ),
-              const SizedBox(height: 16),
-              LayoutBuilder(
-                builder: (context, c) {
-                  if (c.maxWidth < 440) {
-                    return Column(
-                      children: [
-                        dateField,
-                        const SizedBox(height: 16),
-                        assigneeField,
+                        Expanded(child: dateField),
+                        const SizedBox(width: 16),
+                        Expanded(child: assigneeField),
                       ],
                     );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: dateField),
-                      const SizedBox(width: 16),
-                      Expanded(child: assigneeField),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              _LabeledField(
-                label: 'Статус',
-                child: DropdownButtonFormField<TaskStatus>(
-                  initialValue: _status,
-                  isExpanded: true,
-                  items: [
-                    for (final s in TaskStatus.values)
-                      DropdownMenuItem(value: s, child: Text(s.label)),
-                  ],
-                  onChanged: (v) => setState(() => _status = v ?? _status),
+                  },
                 ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(height: 1),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  SecondaryButton(
-                    label: 'Скасувати',
-                    onPressed: () => Navigator.of(context).pop(),
+                const SizedBox(height: 16),
+                _LabeledField(
+                  label: 'Статус',
+                  child: DropdownButtonFormField<TaskStatus>(
+                    initialValue: _status,
+                    isExpanded: true,
+                    items: [
+                      for (final s in TaskStatus.values)
+                        DropdownMenuItem(value: s, child: Text(s.label)),
+                    ],
+                    onChanged: (v) => setState(() => _status = v ?? _status),
                   ),
-                  const SizedBox(width: 12),
-                  PrimaryButton(label: 'Зберегти', onPressed: _save),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 20),
+                const Divider(height: 1),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    SecondaryButton(
+                      label: 'Скасувати',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 12),
+                    PrimaryButton(label: 'Зберегти', onPressed: _save),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
