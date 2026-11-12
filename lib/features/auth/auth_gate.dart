@@ -1,17 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/app_scope.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/widgets.dart';
-import '../../data/app_user.dart';
+import '../../state/auth_controller.dart';
 import '../shell/main_shell.dart';
 import 'login_screen.dart';
 
-/// Кореневий екран: слухає стан автентифікації Firebase і показує
-/// вхід або головну частину застосунку. Повідомляє про вхід, вихід
-/// і відновлення сеансу після перезавантаження сторінки.
+/// Кореневий екран: за станом AuthController показує вхід або головну
+/// частину застосунку та повідомляє про вхід, вихід і відновлення сеансу.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -20,51 +19,37 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  StreamSubscription<AppUser?>? _sub;
-  AppUser? _user;
-  bool _ready = false;
+  StreamSubscription<AuthEvent>? _events;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _sub ??= AppScope.of(context).auth.authStateChanges().listen(_onAuth);
+    _events ??= context.read<AuthController>().events.listen(_onEvent);
   }
 
-  void _onAuth(AppUser? user) {
-    final wasReady = _ready;
-    final previous = _user;
-    setState(() {
-      _user = user;
-      _ready = true;
-    });
-
-    final String? message;
-    if (!wasReady && user != null) {
-      message = 'Сеанс відновлено: ${user.name}';
-    } else if (wasReady && previous == null && user != null) {
-      message = 'Ви увійшли як ${user.name}';
-    } else if (previous != null && user == null) {
-      message = 'Ви вийшли з акаунту';
-    } else {
-      message = null;
-    }
-    if (message != null) {
-      ScaffoldMessenger.maybeOf(context)
-        ?..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(message)));
-    }
+  void _onEvent(AuthEvent event) {
+    final name = context.read<AuthController>().user?.name ?? '';
+    final message = switch (event) {
+      AuthEvent.sessionRestored => 'Сеанс відновлено: $name',
+      AuthEvent.signedIn => 'Ви увійшли як $name',
+      AuthEvent.signedOut => 'Ви вийшли з акаунту',
+    };
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _events?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_ready) return const _Splash();
-    return _user == null ? const LoginScreen() : const MainShell();
+    final auth = context.watch<AuthController>();
+    if (!auth.initialized) return const _Splash();
+    return auth.user == null ? const LoginScreen() : const MainShell();
   }
 }
 

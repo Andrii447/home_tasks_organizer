@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_scope.dart';
+import 'package:provider/provider.dart';
+
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
-import '../../data/repositories/auth_failure.dart';
+import '../../state/auth_controller.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -16,9 +17,15 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
-  bool _loading = false;
   bool _sent = false;
-  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<AuthController>().clearError(),
+    );
+  }
 
   @override
   void dispose() {
@@ -27,32 +34,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _submit() async {
-    if (_loading) return;
-    setState(() => _error = null);
+    final auth = context.read<AuthController>();
+    auth.clearError();
     if (!_formKey.currentState!.validate()) return;
-
-    final scope = AppScope.of(context);
-    setState(() => _loading = true);
-    try {
-      await scope.auth.sendPasswordResetEmail(email: _email.text.trim());
-      await scope.analytics.logEvent('password_reset_requested');
-      if (mounted) setState(() => _sent = true);
-    } on AuthFailure catch (e) {
-      // FR-03: не розкриваємо, чи існує акаунт — «користувача не знайдено»
-      // показуємо так само, як успіх.
-      if (!mounted) return;
-      if (e.code == 'user-not-found') {
-        setState(() => _sent = true);
-      } else {
-        setState(() => _error = e.message);
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    final ok = await auth.sendPasswordReset(_email.text.trim());
+    if (ok && mounted) setState(() => _sent = true);
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthController>();
+    final loading = auth.isSubmitting;
+    final error = auth.error;
     final back = TextButton(
       onPressed: () => Navigator.of(context).pop(),
       child: const Text('Назад до входу'),
@@ -83,7 +76,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   child: AppTextField(
                     label: 'Електронна пошта',
                     controller: _email,
-                    enabled: !_loading,
+                    enabled: !loading,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.done,
                     autofillHints: const [AutofillHints.email],
@@ -92,14 +85,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (_error != null) ...[
-                  FormMessage(_error!),
+                if (error != null) ...[
+                  FormMessage(error),
                   const SizedBox(height: 16),
                 ],
                 PrimaryButton(
                   label: 'Надіслати лист',
                   onPressed: _submit,
-                  loading: _loading,
+                  loading: loading,
                   expanded: true,
                 ),
                 const SizedBox(height: 12),

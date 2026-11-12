@@ -1,25 +1,42 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/app_scope.dart';
+import '../../core/services/analytics_service.dart';
+import '../../core/services/error_reporter.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
-import '../../data/app_user.dart';
-import '../../data/repositories/auth_failure.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../state/auth_controller.dart';
+import '../../state/profile_controller.dart';
 import 'avatar_picker_dialog.dart';
 
-/// FR-04, FR-05: профіль, зміна пароля, вихід з акаунта (Firebase Auth).
-class ProfileScreen extends StatefulWidget {
+/// FR-04, FR-05: профіль, зміна пароля, вихід з акаунта.
+/// ProfileController створюється лише на час показу цього екрана.
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => ProfileController(
+        context.read<AuthRepository>(),
+        context.read<AnalyticsService>(),
+      ),
+      child: const _ProfileView(),
+    );
+  }
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileView extends StatefulWidget {
+  const _ProfileView();
+
+  @override
+  State<_ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<_ProfileView> {
   final _profileForm = GlobalKey<FormState>();
   final _passwordForm = GlobalKey<FormState>();
 
@@ -29,35 +46,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _newPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
 
-  StreamSubscription<AppUser?>? _sub;
-  AppUser? _user;
-
-  bool _savingProfile = false;
-  bool _savingPassword = false;
-  String? _profileError;
-  String? _passwordError;
-  bool _needsRelogin = false;
+  bool _initialized = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_sub != null) return;
-    final auth = AppScope.of(context).auth;
-    _setUser(auth.currentUser, resetName: true);
-    _sub = auth.userChanges().listen((u) => _setUser(u));
-  }
-
-  void _setUser(AppUser? user, {bool resetName = false}) {
+    if (_initialized) return;
+    final user = context.read<ProfileController>().user;
     if (user == null) return;
-    final firstLoad = _user == null;
-    setState(() => _user = user);
+    _initialized = true;
+    _name.text = user.name;
     _email.text = user.email;
-    if (resetName || firstLoad) _name.text = user.name;
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
     _name.dispose();
     _email.dispose();
     _currentPassword.dispose();
@@ -73,97 +76,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
-    if (_savingProfile) return;
-    setState(() => _profileError = null);
     if (!_profileForm.currentState!.validate()) return;
-
-    final scope = AppScope.of(context);
-    setState(() => _savingProfile = true);
-    try {
-      await scope.auth.updateProfile(displayName: _name.text.trim());
-      await scope.analytics.logEvent('profile_updated');
-      if (mounted) _toast('Зміни збережено');
-    } on AuthFailure catch (e) {
-      if (mounted) setState(() => _profileError = e.message);
-    } finally {
-      if (mounted) setState(() => _savingProfile = false);
-    }
+    final ok = await context.read<ProfileController>().saveName(
+      _name.text.trim(),
+    );
+    if (ok && mounted) _toast('Зміни збережено');
   }
 
   Future<void> _changePhoto() async {
-    final user = _user;
+    final profile = context.read<ProfileController>();
+    final user = profile.user;
     if (user == null) return;
     final url = await showAvatarPickerDialog(
       context,
       name: user.name,
       current: user.photoUrl,
     );
-    if (url == null || !mounted) return;
-
-    final scope = AppScope.of(context);
-    try {
-      await scope.auth.updateProfile(photoUrl: url);
-      await scope.analytics.logEvent('profile_photo_changed');
-      if (mounted) _toast(url.isEmpty ? 'Фото прибрано' : 'Фото оновлено');
-    } on AuthFailure catch (e) {
-      if (mounted) _toast(e.message);
-    }
+    if (url == null) return;
+    final error = await profile.changePhoto(url);
+    if (!mounted) return;
+    _toast(error ?? (url.isEmpty ? 'Фото прибрано' : 'Фото оновлено'));
   }
 
   Future<void> _changePassword() async {
-    if (_savingPassword) return;
-    setState(() {
-      _passwordError = null;
-      _needsRelogin = false;
-    });
     if (!_passwordForm.currentState!.validate()) return;
-
-    final scope = AppScope.of(context);
-    setState(() => _savingPassword = true);
-    try {
-      await scope.auth.changePassword(
-        currentPassword: _currentPassword.text,
-        newPassword: _newPassword.text,
-      );
-      await scope.analytics.logEvent('password_changed');
-      _currentPassword.clear();
-      _newPassword.clear();
-      _confirmPassword.clear();
-      if (mounted) _toast('Пароль змінено');
-    } on AuthFailure catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _passwordError =
-            e.code == 'invalid-credential' || e.code == 'wrong-password'
-            ? 'Поточний пароль неправильний.'
-            : e.message;
-        _needsRelogin = e.requiresRecentLogin;
-      });
-    } finally {
-      if (mounted) setState(() => _savingPassword = false);
-    }
+    final ok = await context.read<ProfileController>().changePassword(
+      currentPassword: _currentPassword.text,
+      newPassword: _newPassword.text,
+    );
+    if (!ok || !mounted) return;
+    _currentPassword.clear();
+    _newPassword.clear();
+    _confirmPassword.clear();
+    _toast('Пароль змінено');
   }
 
   Future<void> _logout() async {
-    final scope = AppScope.of(context);
     final nav = Navigator.of(context);
-    try {
-      await scope.auth.signOut();
-      nav.popUntil((route) => route.isFirst);
-    } on AuthFailure catch (e) {
-      if (mounted) _toast(e.message);
-    }
+    await context.read<AuthController>().signOut();
+    nav.popUntil((route) => route.isFirst);
   }
 
   Future<void> _sendTestError() async {
-    await AppScope.of(context).errors.sendTestError();
+    await context.read<ErrorReporter>().sendTestError();
     if (mounted) _toast('Тестову помилку надіслано до Sentry');
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final user = _user;
+    final profile = context.watch<ProfileController>();
+    final user = profile.user;
     if (user == null) return const Center(child: CircularProgressIndicator());
 
     final avatar = Column(
@@ -183,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       label: 'Ім\'я',
       labelAbove: true,
       controller: _name,
-      enabled: !_savingProfile,
+      enabled: !profile.isSavingProfile,
       validator: Validators.name,
       onSubmitted: (_) => _saveProfile(),
     );
@@ -200,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final saveButton = PrimaryButton(
       label: 'Зберегти зміни',
       onPressed: _saveProfile,
-      loading: _savingProfile,
+      loading: profile.isSavingProfile,
     );
 
     final passwordFields = [
@@ -209,7 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         labelAbove: true,
         obscure: true,
         controller: _currentPassword,
-        enabled: !_savingPassword,
+        enabled: !profile.isChangingPassword,
         autofillHints: const [AutofillHints.password],
         validator: Validators.passwordPresent,
       ),
@@ -218,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         labelAbove: true,
         obscure: true,
         controller: _newPassword,
-        enabled: !_savingPassword,
+        enabled: !profile.isChangingPassword,
         autofillHints: const [AutofillHints.newPassword],
         validator: (v) {
           final base = Validators.newPassword(v);
@@ -233,7 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         labelAbove: true,
         obscure: true,
         controller: _confirmPassword,
-        enabled: !_savingPassword,
+        enabled: !profile.isChangingPassword,
         validator: Validators.confirm(() => _newPassword.text),
         onSubmitted: (_) => _changePassword(),
       ),
@@ -260,9 +223,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
               emailField,
             ],
-            if (_profileError != null) ...[
+            if (profile.profileError != null) ...[
               const SizedBox(height: 16),
-              FormMessage(_profileError!),
+              FormMessage(profile.profileError!),
             ],
             const SizedBox(height: 16),
             Align(
@@ -354,11 +317,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ],
                           ],
                         ),
-                      if (_passwordError != null) ...[
+                      if (profile.passwordError != null) ...[
                         const SizedBox(height: 16),
-                        FormMessage(_passwordError!),
+                        FormMessage(profile.passwordError!),
                       ],
-                      if (_needsRelogin) ...[
+                      if (profile.needsRelogin) ...[
                         const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: _logout,
@@ -374,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: PrimaryButton(
                           label: 'Змінити пароль',
                           onPressed: _changePassword,
-                          loading: _savingPassword,
+                          loading: profile.isChangingPassword,
                         ),
                       ),
                     ],

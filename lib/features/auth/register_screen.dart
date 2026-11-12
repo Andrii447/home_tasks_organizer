@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_scope.dart';
-import '../../core/navigation/app_routes.dart';
+import 'package:provider/provider.dart';
+
 import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
-import '../../data/repositories/auth_failure.dart';
+import '../../state/auth_controller.dart';
 import 'auth_footer_link.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -22,8 +22,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  bool _loading = false;
-  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<AuthController>().clearError(),
+    );
+  }
 
   @override
   void dispose() {
@@ -35,31 +41,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    if (_loading) return;
-    setState(() => _error = null);
+    final auth = context.read<AuthController>();
+    auth.clearError();
     if (!_formKey.currentState!.validate()) return;
-
-    final scope = AppScope.of(context);
     final nav = Navigator.of(context);
-    setState(() => _loading = true);
-    try {
-      await scope.auth.signUp(
-        name: _name.text.trim(),
-        email: _email.text.trim(),
-        password: _password.text,
-      );
-      await scope.analytics.logSignUp();
-      // FR-01: після реєстрації — створення або приєднання до дому.
-      nav.pushReplacementNamed(AppRoutes.householdSetup);
-    } on AuthFailure catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    final ok = await auth.signUp(
+      name: _name.text.trim(),
+      email: _email.text.trim(),
+      password: _password.text,
+    );
+    // FR-01: новий користувач ще не має дому, тому під цим маршрутом
+    // AuthGate вже показує створення або приєднання до домогосподарства.
+    if (ok && mounted) nav.pop();
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthController>();
+    final loading = auth.isSubmitting;
+    final error = auth.error;
     return AuthScaffold(
       child: AuthCard(
         title: 'Створіть акаунт',
@@ -74,7 +74,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   AppTextField(
                     label: 'Ім\'я',
                     controller: _name,
-                    enabled: !_loading,
+                    enabled: !loading,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.name],
                     validator: Validators.name,
@@ -83,7 +83,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   AppTextField(
                     label: 'Електронна пошта',
                     controller: _email,
-                    enabled: !_loading,
+                    enabled: !loading,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
@@ -93,7 +93,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   AppTextField(
                     label: 'Пароль',
                     controller: _password,
-                    enabled: !_loading,
+                    enabled: !loading,
                     obscure: true,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.newPassword],
@@ -103,7 +103,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   AppTextField(
                     label: 'Підтвердження пароля',
                     controller: _confirm,
-                    enabled: !_loading,
+                    enabled: !loading,
                     obscure: true,
                     textInputAction: TextInputAction.done,
                     validator: Validators.confirm(() => _password.text),
@@ -114,14 +114,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          if (_error != null) ...[
-            FormMessage(_error!),
+          if (error != null) ...[
+            FormMessage(error),
             const SizedBox(height: 16),
           ],
           PrimaryButton(
             label: 'Зареєструватися',
             onPressed: _submit,
-            loading: _loading,
+            loading: loading,
             expanded: true,
           ),
           const SizedBox(height: 16),

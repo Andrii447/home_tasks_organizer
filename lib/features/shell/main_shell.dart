@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_scope.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/services/analytics_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
 import '../home/home_screen.dart';
+import '../household/household_setup_screen.dart';
 import '../household/my_household_screen.dart';
+import '../../state/household_controller.dart';
+import '../../state/load_status.dart';
 import '../profile/profile_screen.dart';
 
 class _Destination {
@@ -51,7 +56,7 @@ class _MainShellState extends State<MainShell> {
   // Вкладки перемикаються через IndexedStack без маршрутів Navigator,
   // тому перегляд екрана реєструємо вручну.
   void _logScreen() =>
-      AppScope.of(context).analytics.logScreen(_screenNames[_index]);
+      context.read<AnalyticsService>().logScreen(_screenNames[_index]);
 
   void _select(int i) {
     if (i == _index) return;
@@ -67,6 +72,34 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    // FR-01/FR-02: користувач без домогосподарства спершу створює дім
+    // або приєднується до наявного.
+    final household = context.watch<HouseholdController>();
+    switch (household.status) {
+      case LoadStatus.idle || LoadStatus.loading:
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      case LoadStatus.failure:
+        return Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Не вдалося завантажити дані дому'),
+                const SizedBox(height: 12),
+                PrimaryButton(
+                  label: 'Спробувати ще',
+                  onPressed: household.load,
+                ),
+              ],
+            ),
+          ),
+        );
+      case LoadStatus.ready when household.household == null:
+        return const HouseholdSetupScreen();
+      case LoadStatus.ready:
+        break;
+    }
+
     final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.wide;
 
     if (wide) {

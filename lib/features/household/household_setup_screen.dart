@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_scope.dart';
+import 'package:provider/provider.dart';
+
 import '../../core/utils/validators.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
+import '../../state/auth_controller.dart';
+import '../../state/household_controller.dart';
+import '../../state/tasks_controller.dart';
 
 /// FR-06: створення домогосподарства або приєднання за кодом.
 class HouseholdSetupScreen extends StatefulWidget {
@@ -27,12 +31,25 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
     super.dispose();
   }
 
-  // Домогосподарства зберігатимуться у Cloud Firestore (наступні лаби),
-  // тому тут лише валідація й перехід на головну (AuthGate під цим екраном).
-  void _continue(GlobalKey<FormState> form, String event) {
-    if (!form.currentState!.validate()) return;
-    AppScope.of(context).analytics.logEvent(event);
-    Navigator.of(context).pop();
+  bool _busy = false;
+
+  /// Створює дім або приєднує до наявного й заповнює демо-завдання
+  /// (до інтеграції Firestore). Після цього MainShell покаже головну.
+  Future<void> _continue(
+    GlobalKey<FormState> form, {
+    required bool join,
+  }) async {
+    if (_busy || !form.currentState!.validate()) return;
+    final households = context.read<HouseholdController>();
+    final tasks = context.read<TasksController>();
+    final uid = context.read<AuthController>().user!.uid;
+    setState(() => _busy = true);
+    if (join) {
+      await households.join(_code.text.trim());
+    } else {
+      await households.create(_name.text.trim());
+    }
+    await tasks.seedDemo(uid);
   }
 
   @override
@@ -45,10 +62,11 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
         label: 'Назва домогосподарства',
         controller: _name,
         validator: Validators.householdName,
-        onSubmitted: (_) => _continue(_createForm, 'household_created'),
+        onSubmitted: (_) => _continue(_createForm, join: false),
       ),
       buttonLabel: 'Створити',
-      onPressed: () => _continue(_createForm, 'household_created'),
+      loading: _busy,
+      onPressed: () => _continue(_createForm, join: false),
     );
     final join = _SetupCard(
       title: 'Приєднатися до дому',
@@ -59,10 +77,11 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
         controller: _code,
         hint: 'ДІМ-XXXX-00',
         validator: Validators.inviteCode,
-        onSubmitted: (_) => _continue(_joinForm, 'household_joined'),
+        onSubmitted: (_) => _continue(_joinForm, join: true),
       ),
       buttonLabel: 'Приєднатися',
-      onPressed: () => _continue(_joinForm, 'household_joined'),
+      loading: _busy,
+      onPressed: () => _continue(_joinForm, join: true),
     );
 
     return AuthScaffold(
@@ -93,6 +112,13 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
               );
             },
           ),
+          const SizedBox(height: AppSpacing.large),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () => context.read<AuthController>().signOut(),
+            child: const Text('Вийти з акаунту'),
+          ),
         ],
       ),
     );
@@ -107,6 +133,7 @@ class _SetupCard extends StatelessWidget {
     required this.field,
     required this.buttonLabel,
     required this.onPressed,
+    required this.loading,
   });
 
   final GlobalKey<FormState> formKey;
@@ -115,6 +142,7 @@ class _SetupCard extends StatelessWidget {
   final Widget field;
   final String buttonLabel;
   final VoidCallback onPressed;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +169,7 @@ class _SetupCard extends StatelessWidget {
           PrimaryButton(
             label: buttonLabel,
             onPressed: onPressed,
+            loading: loading,
             expanded: true,
           ),
         ],

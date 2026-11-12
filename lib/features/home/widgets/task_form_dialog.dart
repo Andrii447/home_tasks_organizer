@@ -3,22 +3,26 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_format.dart';
 import '../../../core/widgets/widgets.dart';
-import '../../../data/mock_data.dart';
 import '../../../data/models.dart';
 
 /// Діалог створення/редагування завдання (FR-09, FR-10, FR-11).
 /// Повертає заповнене завдання або `null`, якщо користувач скасував.
-Future<HomeTask?> showTaskFormDialog(BuildContext context, {HomeTask? task}) {
+Future<HomeTask?> showTaskFormDialog(
+  BuildContext context, {
+  required List<Member> members,
+  HomeTask? task,
+}) {
   return showDialog<HomeTask>(
     context: context,
-    builder: (_) => _TaskFormDialog(task: task),
+    builder: (_) => _TaskFormDialog(task: task, members: members),
   );
 }
 
 class _TaskFormDialog extends StatefulWidget {
-  const _TaskFormDialog({this.task});
+  const _TaskFormDialog({required this.members, this.task});
 
   final HomeTask? task;
+  final List<Member> members;
 
   @override
   State<_TaskFormDialog> createState() => _TaskFormDialogState();
@@ -30,7 +34,10 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
     text: widget.task?.description,
   );
   late DateTime? _dueDate = widget.task?.dueDate;
-  late String? _assigneeId = widget.task?.assigneeId;
+  late String? _assigneeId =
+      widget.members.any((m) => m.id == widget.task?.assigneeId)
+      ? widget.task?.assigneeId
+      : null;
   late TaskStatus _status = widget.task?.status ?? TaskStatus.planned;
   final _formKey = GlobalKey<FormState>();
 
@@ -106,7 +113,7 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
         isExpanded: true,
         items: [
           const DropdownMenuItem(value: null, child: Text('Не призначено')),
-          for (final m in MockData.members)
+          for (final m in widget.members)
             DropdownMenuItem(value: m.id, child: Text(m.name)),
         ],
         onChanged: (v) => setState(() => _assigneeId = v),

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../core/app_scope.dart';
+import 'package:provider/provider.dart';
+
 import '../../core/navigation/app_routes.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
-import '../../data/repositories/auth_failure.dart';
+import '../../state/auth_controller.dart';
 import 'auth_footer_link.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,8 +19,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _loading = false;
-  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    // Помилка з іншого екрана (наприклад, реєстрації) тут не потрібна.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<AuthController>().clearError(),
+    );
+  }
 
   @override
   void dispose() {
@@ -29,29 +36,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (_loading) return;
-    setState(() => _error = null);
+    final auth = context.read<AuthController>();
+    auth.clearError();
     if (!_formKey.currentState!.validate()) return;
-
-    final scope = AppScope.of(context);
-    setState(() => _loading = true);
-    try {
-      await scope.auth.signIn(
-        email: _email.text.trim(),
-        password: _password.text,
-      );
-      await scope.analytics.logLogin();
-      // Після успішного входу AuthGate сам покаже головну сторінку.
-    } on AuthFailure catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    // Після успішного входу AuthGate сам покаже головну сторінку.
+    await auth.signIn(email: _email.text.trim(), password: _password.text);
   }
 
   @override
   Widget build(BuildContext context) {
     final nav = Navigator.of(context);
+    final auth = context.watch<AuthController>();
+    final loading = auth.isSubmitting;
+    final error = auth.error;
     return AuthScaffold(
       child: AuthCard(
         title: 'Вхід до ДімПлану',
@@ -66,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   AppTextField(
                     label: 'Email',
                     controller: _email,
-                    enabled: !_loading,
+                    enabled: !loading,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
@@ -76,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   AppTextField(
                     label: 'Пароль',
                     controller: _password,
-                    enabled: !_loading,
+                    enabled: !loading,
                     obscure: true,
                     textInputAction: TextInputAction.done,
                     autofillHints: const [AutofillHints.password],
@@ -90,21 +87,21 @@ class _LoginScreenState extends State<LoginScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: _loading
+              onPressed: loading
                   ? null
                   : () => nav.pushNamed(AppRoutes.forgotPassword),
               child: const Text('Забули пароль?'),
             ),
           ),
-          if (_error != null) ...[
-            FormMessage(_error!),
+          if (error != null) ...[
+            FormMessage(error),
             const SizedBox(height: 16),
           ] else
             const SizedBox(height: 8),
           PrimaryButton(
             label: 'Увійти',
             onPressed: _submit,
-            loading: _loading,
+            loading: loading,
             expanded: true,
           ),
           const SizedBox(height: 16),

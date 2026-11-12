@@ -8,6 +8,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'app.dart';
 import 'core/services/analytics_service.dart';
 import 'core/services/error_reporter.dart';
+import 'core/storage/local_store.dart';
 import 'data/repositories/firebase_auth_repository.dart';
 import 'firebase_options.dart';
 
@@ -34,6 +35,7 @@ Future<void> _runDimPlan() async {
     auth: FirebaseAuthRepository(FirebaseAuth.instance, reporter: _errors),
     analytics: FirebaseAnalyticsService(FirebaseAnalytics.instance),
     errors: _errors,
+    store: SharedPreferencesStore(),
     navigatorObservers: [if (_sentryDsn.isNotEmpty) SentryNavigatorObserver()],
   );
   runApp(_sentryDsn.isEmpty ? app : SentryWidget(child: app));

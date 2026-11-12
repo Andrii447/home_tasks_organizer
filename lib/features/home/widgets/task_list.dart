@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_format.dart';
 import '../../../core/widgets/widgets.dart';
-import '../../../data/mock_data.dart';
 import '../../../data/models.dart';
 
 typedef TaskCallback = void Function(HomeTask task);
+typedef MemberLookup = Member? Function(String? id);
 
 class _Actions extends StatelessWidget {
   const _Actions({required this.task, this.onEdit, this.onDelete});
@@ -35,15 +35,15 @@ class _Actions extends StatelessWidget {
   }
 }
 
-class _Assignee extends StatelessWidget {
-  const _Assignee(this.id);
+class TaskAssignee extends StatelessWidget {
+  const TaskAssignee(this.member, {super.key});
 
-  final String? id;
+  final Member? member;
 
   @override
   Widget build(BuildContext context) {
-    final member = MockData.memberById(id);
-    if (member == null) {
+    final m = member;
+    if (m == null) {
       return const Text(
         'Не призначено',
         style: TextStyle(color: AppColors.textSecondary),
@@ -52,9 +52,9 @@ class _Assignee extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        UserAvatar(name: member.name),
+        UserAvatar(name: m.name),
         const SizedBox(width: 10),
-        Flexible(child: Text(member.name, overflow: TextOverflow.ellipsis)),
+        Flexible(child: Text(m.name, overflow: TextOverflow.ellipsis)),
       ],
     );
   }
@@ -78,11 +78,31 @@ class _DueDate extends StatelessWidget {
   }
 }
 
-/// Широка версія: таблиця із заголовком.
-class TaskTable extends StatelessWidget {
-  const TaskTable({super.key, required this.tasks, this.onEdit, this.onDelete});
+const _emptyText = Padding(
+  padding: EdgeInsets.all(32),
+  child: Center(
+    child: Text(
+      'Завдань за цими фільтрами немає',
+      style: TextStyle(color: AppColors.textSecondary),
+    ),
+  ),
+);
+
+/// Широка версія: таблиця завдань як група слайверів усередині
+/// CustomScrollView (рядки будуються ліниво через SliverList).
+class TaskTableSliver extends StatelessWidget {
+  const TaskTableSliver({
+    super.key,
+    required this.tasks,
+    required this.memberById,
+    this.onOpen,
+    this.onEdit,
+    this.onDelete,
+  });
 
   final List<HomeTask> tasks;
+  final MemberLookup memberById;
+  final TaskCallback? onOpen;
   final TaskCallback? onEdit;
   final TaskCallback? onDelete;
 
@@ -94,18 +114,20 @@ class TaskTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.outline),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          children: [
-            Container(
-              color: AppColors.sidebar,
+    return DecoratedSliver(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.outline),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      sliver: SliverMainAxisGroup(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: AppColors.sidebar,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: const Row(
                 children: [
@@ -123,146 +145,168 @@ class TaskTable extends StatelessWidget {
                 ],
               ),
             ),
-            if (tasks.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'Завдань за цими фільтрами немає',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ),
-            for (final task in tasks) ...[
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                child: Row(
+          ),
+          if (tasks.isEmpty)
+            const SliverToBoxAdapter(child: _emptyText)
+          else
+            SliverList.builder(
+              itemCount: tasks.length,
+              itemBuilder: (context, i) {
+                final task = tasks[i];
+                final last = i == tasks.length - 1;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        task.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                    const Divider(height: 1),
+                    InkWell(
+                      borderRadius: last
+                          ? const BorderRadius.vertical(
+                              bottom: Radius.circular(16),
+                            )
+                          : null,
+                      onTap: () => onOpen?.call(task),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: Text(
+                                task.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: TaskAssignee(memberById(task.assigneeId)),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _DueDate(task),
+                                  if (task.isOverdue) ...[
+                                    const SizedBox(height: 4),
+                                    const OverdueChip(),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: StatusChip(status: task.status),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 96,
+                              child: _Actions(
+                                task: task,
+                                onEdit: onEdit,
+                                onDelete: onDelete,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    Expanded(flex: 3, child: _Assignee(task.assigneeId)),
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _DueDate(task),
-                          if (task.isOverdue) ...[
-                            const SizedBox(height: 4),
-                            const OverdueChip(),
-                          ],
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: StatusChip(status: task.status),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 96,
-                      child: _Actions(
-                        task: task,
-                        onEdit: onEdit,
-                        onDelete: onDelete,
-                      ),
-                    ),
                   ],
-                ),
-              ),
-            ],
-          ],
-        ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
 }
 
-/// Вузька версія: список карток.
-class TaskCardList extends StatelessWidget {
-  const TaskCardList({
+/// Вузька версія: список карток (SliverList з роздільниками).
+class TaskCardSliverList extends StatelessWidget {
+  const TaskCardSliverList({
     super.key,
     required this.tasks,
+    required this.memberById,
+    this.onOpen,
     this.onEdit,
     this.onDelete,
   });
 
   final List<HomeTask> tasks;
+  final MemberLookup memberById;
+  final TaskCallback? onOpen;
   final TaskCallback? onEdit;
   final TaskCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
-    if (tasks.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'Завдань за цими фільтрами немає',
-            style: TextStyle(color: AppColors.textSecondary),
+    if (tasks.isEmpty) return const SliverToBoxAdapter(child: _emptyText);
+    return SliverList.separated(
+      itemCount: tasks.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      itemBuilder: (context, i) {
+        final task = tasks[i];
+        return Material(
+          color: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: AppColors.outline),
           ),
-        ),
-      );
-    }
-    return Column(
-      children: [
-        for (final task in tasks) ...[
-          AppCard(
-            radius: 14,
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        task.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 17,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => onOpen?.call(task),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          task.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                          ),
                         ),
                       ),
-                    ),
-                    _Actions(task: task, onEdit: onEdit, onDelete: onDelete),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Row(
-                    children: [
-                      Expanded(child: _Assignee(task.assigneeId)),
-                      _DueDate(task),
+                      _Actions(task: task, onEdit: onEdit, onDelete: onDelete),
                     ],
                   ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    StatusChip(status: task.status),
-                    if (task.isOverdue) const OverdueChip(),
-                  ],
-                ),
-              ],
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TaskAssignee(memberById(task.assigneeId)),
+                        ),
+                        _DueDate(task),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      StatusChip(status: task.status),
+                      if (task.isOverdue) const OverdueChip(),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-        ],
-      ],
+        );
+      },
     );
   }
 }
