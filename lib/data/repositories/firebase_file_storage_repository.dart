@@ -28,4 +28,22 @@ class FirebaseFileStorageRepository implements FileStorageRepository {
       throw DataFailure.from(e);
     }
   }
+
+  @override
+  Future<void> deleteAvatar(String url) async {
+    final Reference ref;
+    try {
+      // Не наше посилання (готовий аватар, сторонній сайт) — нічого не робимо.
+      ref = _storage.refFromURL(url);
+    } catch (_) {
+      return;
+    }
+    if (!ref.fullPath.contains('/avatar/')) return;
+    try {
+      await ref.delete();
+    } on FirebaseException catch (e) {
+      if (e.code == 'object-not-found') return;
+      throw DataFailure.from(e);
+    }
+  }
 }

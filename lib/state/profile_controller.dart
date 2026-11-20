@@ -80,15 +80,30 @@ class ProfileController extends ChangeNotifier {
 
   /// Повертає текст помилки або null у разі успіху.
   Future<String?> changePhoto(String url) async {
+    final previous = _user?.photoUrl;
     try {
       await _repo.updateProfile(photoUrl: url);
       await _syncProfile();
       await _analytics.logEvent('profile_photo_changed');
+      if (previous != null && previous.isNotEmpty && previous != url) {
+        await _deleteOldPhoto(previous);
+      }
       return null;
     } on AuthFailure catch (e) {
       return e.message;
     } on DataFailure catch (e) {
       return e.message;
+    }
+  }
+
+  /// Старе фото більше ніде не використовується — прибираємо його зі
+  /// сховища, щоб файли не накопичувалися. Помилка тут не заважає
+  /// користувачу: нове фото вже встановлено.
+  Future<void> _deleteOldPhoto(String url) async {
+    try {
+      await _files.deleteAvatar(url);
+    } catch (e) {
+      debugPrint('Не вдалося видалити старе фото: $e');
     }
   }
 

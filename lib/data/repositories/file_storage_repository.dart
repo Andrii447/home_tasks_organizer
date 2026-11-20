@@ -8,4 +8,8 @@ abstract interface class FileStorageRepository {
     required Uint8List bytes,
     required String contentType,
   });
+
+  /// Видаляє попереднє фото профілю, якщо воно лежить у цьому сховищі.
+  /// Посилання на сторонні сайти та готові аватари ігноруються.
+  Future<void> deleteAvatar(String url);
 }

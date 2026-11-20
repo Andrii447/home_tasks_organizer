@@ -156,6 +156,13 @@ void main() {
       expect(auth.currentUser!.photoUrl, startsWith('https://storage.example'));
       expect(users.saved['u1']!.photoUrl, auth.currentUser!.photoUrl);
     });
+
+    test('a new photo removes the previous one from storage', () async {
+      await profile.uploadPhoto(Uint8List(100), 'image/png');
+      await profile.uploadPhoto(Uint8List(100), 'image/jpeg');
+      expect(files.uploads.keys.single, 'users/u1/avatar/1.png');
+      expect(auth.currentUser!.photoUrl, endsWith('/avatar/1.png'));
+    });
   });
 
   testWidgets('empty login form shows validation errors', (tester) async {

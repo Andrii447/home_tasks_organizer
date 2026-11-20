@@ -221,6 +221,7 @@ class FakeUserRepository implements UserRepository {
 
 class FakeFileStorage implements FileStorageRepository {
   final uploads = <String, Uint8List>{};
+  var _next = 0;
 
   @override
   Future<String> uploadAvatar({
@@ -228,8 +229,13 @@ class FakeFileStorage implements FileStorageRepository {
     required Uint8List bytes,
     required String contentType,
   }) async {
-    final path = 'users/$uid/avatar/${uploads.length}.png';
+    final path = 'users/$uid/avatar/${_next++}.png';
     uploads[path] = bytes;
     return 'https://storage.example/$path';
+  }
+
+  @override
+  Future<void> deleteAvatar(String url) async {
+    uploads.remove(url.replaceFirst('https://storage.example/', ''));
   }
 }
