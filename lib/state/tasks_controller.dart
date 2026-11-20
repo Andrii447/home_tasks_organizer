@@ -5,35 +5,43 @@ import 'package:flutter/foundation.dart';
 import '../core/services/analytics_service.dart';
 import '../core/services/error_reporter.dart';
 import '../core/storage/app_preferences.dart';
-import '../data/mock_data.dart';
 import '../data/models.dart';
+import '../data/repositories/data_failure.dart';
 import '../data/repositories/task_repository.dart';
 import 'load_status.dart';
 
-typedef TaskRepositoryFactory = TaskRepository Function(String uid);
 typedef PreferencesFactory = AppPreferences Function(String uid);
 
-/// Стан списку завдань (FR-08 – FR-12): завантаження, фільтри,
-/// створення, редагування, зміна статусу та видалення.
+/// Стан списку завдань (FR-08 – FR-12): завантаження з Firestore у
+/// реальному часі, фільтри, створення, редагування та видалення.
 class TasksController extends ChangeNotifier {
-  TasksController(this._repoFor, this._prefsFor, this._analytics, this._errors);
+  TasksController(this._repo, this._prefsFor, this._analytics, this._errors);
 
-  final TaskRepositoryFactory _repoFor;
+  final TaskRepository _repo;
   final PreferencesFactory _prefsFor;
   final AnalyticsService _analytics;
   final ErrorReporter _errors;
 
-  TaskRepository? _repo;
+  StreamSubscription<List<HomeTask>>? _sub;
   AppPreferences? _prefs;
   String? _uid;
+  String? _householdId;
   LoadStatus _status = LoadStatus.idle;
   List<HomeTask> _tasks = [];
   TaskFilters _filters = const TaskFilters();
+  bool _isSaving = false;
+  String? _saveError;
   bool _disposed = false;
 
   LoadStatus get status => _status;
   List<HomeTask> get tasks => List.unmodifiable(_tasks);
   TaskFilters get filters => _filters;
+
+  /// Триває створення, редагування чи видалення.
+  bool get isSaving => _isSaving;
+
+  /// Помилка останнього збереження.
+  String? get saveError => _saveError;
 
   /// Завдання з урахуванням вибраних фільтрів.
   List<HomeTask> get visibleTasks => [
@@ -57,98 +65,104 @@ class TasksController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  /// Викликається ChangeNotifierProxyProvider при зміні користувача.
-  void bindUser(String? uid) {
-    if (uid == _uid) return;
-    _uid = uid;
+  /// Викликається ChangeNotifierProxyProvider2: завдання належать дому,
+  /// а фільтри — користувачу.
+  void bind(String? uid, String? householdId) {
+    if (uid != _uid) {
+      _uid = uid;
+      _prefs = uid == null ? null : _prefsFor(uid);
+      _filters = const TaskFilters();
+      if (uid != null) scheduleMicrotask(_loadFilters);
+    }
+    if (householdId == _householdId) return;
+    _householdId = householdId;
+    _sub?.cancel();
+    _sub = null;
     _tasks = [];
-    _filters = const TaskFilters();
-    if (uid == null) {
-      _repo = null;
-      _prefs = null;
+    if (householdId == null) {
       _status = LoadStatus.idle;
       return;
     }
-    _repo = _repoFor(uid);
-    _prefs = _prefsFor(uid);
     _status = LoadStatus.loading;
-    scheduleMicrotask(load);
+    _sub = _repo
+        .watchTasks(householdId)
+        .listen(
+          (tasks) {
+            _tasks = tasks;
+            _status = LoadStatus.ready;
+            _notify();
+          },
+          onError: (Object e, StackTrace st) {
+            _status = LoadStatus.failure;
+            _notify();
+            _errors.report(e, st, hint: 'tasks');
+          },
+        );
   }
 
-  Future<void> load() async {
-    final repo = _repo;
-    if (repo == null) return;
-    _status = LoadStatus.loading;
+  /// Повторна підписка після помилки завантаження.
+  void retry() {
+    final id = _householdId;
+    _householdId = null;
+    bind(_uid, id);
+    _notify();
+  }
+
+  Future<void> _loadFilters() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    _filters = await prefs.loadTaskFilters();
+    _notify();
+  }
+
+  /// Спільна обгортка запису: стан «зберігається» та текст помилки.
+  Future<bool> _write(Future<void> Function(String hid) action) async {
+    final hid = _householdId;
+    if (hid == null || _isSaving) return false;
+    _isSaving = true;
+    _saveError = null;
     _notify();
     try {
-      _tasks = await repo.loadTasks();
-      _filters = await _prefs!.loadTaskFilters();
-      _status = LoadStatus.ready;
-    } catch (e, st) {
-      _status = LoadStatus.failure;
-      await _errors.report(e, st, hint: 'tasks');
+      await action(hid);
+      return true;
+    } on DataFailure catch (e) {
+      _saveError = e.message;
+      return false;
+    } finally {
+      _isSaving = false;
+      _notify();
     }
+  }
+
+  void clearSaveError() {
+    if (_saveError == null) return;
+    _saveError = null;
     _notify();
   }
 
-  /// Демо-завдання для нового домогосподарства (до інтеграції Firestore).
-  Future<void> seedDemo(String me) async {
-    _tasks = MockData.tasks(me);
-    _status = LoadStatus.ready;
-    _notify();
-    await _repo?.replaceAll(_tasks);
+  /// Створює нове або зберігає змінене завдання.
+  Future<bool> save(HomeTask task) => _write((hid) async {
+    if (task.isNew) {
+      await _repo.addTask(hid, task.copyWith(createdBy: _uid));
+      await _analytics.logEvent('task_created', {'status': task.status.name});
+    } else {
+      await _repo.updateTask(hid, task);
+      await _analytics.logEvent('task_updated');
+    }
+  });
+
+  Future<bool> changeStatus(HomeTask task, TaskStatus status) {
+    if (task.status == status) return Future.value(true);
+    return _write((hid) async {
+      await _repo.updateTask(hid, task.copyWith(status: status));
+      await _analytics.logEvent('task_status_changed', {'status': status.name});
+    });
   }
 
-  Future<void> add(HomeTask task) async {
-    _tasks = [..._tasks, task];
-    _notify();
-    await _repo?.saveTask(task);
-    await _analytics.logEvent('task_created', {'status': task.status.name});
-  }
-
-  Future<void> update(HomeTask task) async {
-    _tasks = [for (final t in _tasks) t.id == task.id ? task : t];
-    _notify();
-    await _repo?.saveTask(task);
-    await _analytics.logEvent('task_updated');
-  }
-
-  Future<void> changeStatus(HomeTask task, TaskStatus status) async {
-    if (task.status == status) return;
-    await update(task.copyWith(status: status));
-    await _analytics.logEvent('task_status_changed', {'status': status.name});
-  }
-
-  Future<void> delete(String id) async {
-    _tasks = [
-      for (final t in _tasks)
-        if (t.id != id) t,
-    ];
-    _notify();
-    await _repo?.deleteTask(id);
+  Future<bool> delete(HomeTask task) => _write((hid) async {
+    await _repo.deleteTask(hid, task.id);
     await _analytics.logEvent('task_deleted');
-  }
-
-  /// FR-07: завдання видаленого учасника залишаються без виконавця.
-  Future<void> unassignMember(String memberId) async {
-    final affected = _tasks.where((t) => t.assigneeId == memberId).toList();
-    if (affected.isEmpty) return;
-    _tasks = [
-      for (final t in _tasks)
-        t.assigneeId == memberId
-            ? HomeTask(
-                id: t.id,
-                title: t.title,
-                description: t.description,
-                dueDate: t.dueDate,
-                status: t.status,
-              )
-            : t,
-    ];
-    _notify();
-    await _repo?.replaceAll(_tasks);
-    if (_filters.assigneeId == memberId) await setAssigneeFilter(null);
-  }
+  });
 
   Future<void> setStatusFilter(TaskStatus? status) =>
       _setFilters(TaskFilters(status: status, assigneeId: _filters.assigneeId));
@@ -165,6 +179,7 @@ class TasksController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sub?.cancel();
     super.dispose();
   }
 }

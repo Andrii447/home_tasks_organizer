@@ -9,8 +9,10 @@ import 'core/storage/app_preferences.dart';
 import 'core/storage/local_store.dart';
 import 'core/theme/app_theme.dart';
 import 'data/repositories/auth_repository.dart';
+import 'data/repositories/file_storage_repository.dart';
 import 'data/repositories/household_repository.dart';
 import 'data/repositories/task_repository.dart';
+import 'data/repositories/user_repository.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/auth/forgot_password_screen.dart';
 import 'features/auth/register_screen.dart';
@@ -22,6 +24,10 @@ class DimPlanApp extends StatelessWidget {
   const DimPlanApp({
     super.key,
     required this.auth,
+    required this.households,
+    required this.tasks,
+    required this.users,
+    required this.files,
     required this.analytics,
     required this.errors,
     required this.store,
@@ -29,6 +35,10 @@ class DimPlanApp extends StatelessWidget {
   });
 
   final AuthRepository auth;
+  final HouseholdRepository households;
+  final TaskRepository tasks;
+  final UserRepository users;
+  final FileStorageRepository files;
   final AnalyticsService analytics;
   final ErrorReporter errors;
   final LocalStore store;
@@ -40,31 +50,37 @@ class DimPlanApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // Репозиторії та сервіси (Dependency Injection через Provider).
         Provider<AuthRepository>.value(value: auth),
+        Provider<HouseholdRepository>.value(value: households),
+        Provider<TaskRepository>.value(value: tasks),
+        Provider<UserRepository>.value(value: users),
+        Provider<FileStorageRepository>.value(value: files),
         Provider<AnalyticsService>.value(value: analytics),
         Provider<ErrorReporter>.value(value: errors),
         Provider<LocalStore>.value(value: store),
+        // Моделі стану.
         ChangeNotifierProvider(create: (_) => AuthController(auth, analytics)),
-        // Дані дому та завдань прив'язані до користувача: коли він
-        // змінюється, контролери перезавантажують його дані зі сховища.
+        // Дім залежить від користувача: при вході іншого користувача
+        // контролер підписується на його дім у Firestore.
         ChangeNotifierProxyProvider<AuthController, HouseholdController>(
-          create: (_) => HouseholdController(
-            (uid) => LocalHouseholdRepository(store, uid),
-            analytics,
-            errors,
-          ),
-          update: (_, authState, households) =>
-              households!..bindUser(authState.user),
+          create: (_) => HouseholdController(households, analytics, errors),
+          update: (_, authState, home) => home!..bindUser(authState.user),
         ),
-        ChangeNotifierProxyProvider<AuthController, TasksController>(
+        // Завдання належать дому, а фільтри — користувачу.
+        ChangeNotifierProxyProvider2<
+          AuthController,
+          HouseholdController,
+          TasksController
+        >(
           create: (_) => TasksController(
-            (uid) => LocalTaskRepository(store, uid),
+            tasks,
             (uid) => AppPreferences(store, uid),
             analytics,
             errors,
           ),
-          update: (_, authState, tasks) =>
-              tasks!..bindUser(authState.user?.uid),
+          update: (_, authState, home, taskState) =>
+              taskState!..bind(authState.user?.uid, home.household?.id),
         ),
       ],
       child: MaterialApp(

@@ -88,7 +88,7 @@ class _MainShellState extends State<MainShell> {
                 const SizedBox(height: 12),
                 PrimaryButton(
                   label: 'Спробувати ще',
-                  onPressed: household.load,
+                  onPressed: household.retry,
                 ),
               ],
             ),

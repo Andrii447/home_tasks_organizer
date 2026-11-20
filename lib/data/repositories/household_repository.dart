@@ -1,33 +1,22 @@
-import '../../core/storage/local_store.dart';
 import '../models.dart';
 
+/// Робота з домогосподарствами (колекції households, invites, users).
 abstract interface class HouseholdRepository {
-  /// null — користувач ще не створив дім і не приєднався до жодного.
-  Future<Household?> load();
-  Future<void> save(Household household);
-  Future<void> clear();
-}
+  /// Дім користувача в реальному часі; null — дому немає або доступ
+  /// до нього втрачено (користувача видалив власник).
+  Stream<Household?> watchHouseholdOf(String uid);
 
-class LocalHouseholdRepository implements HouseholdRepository {
-  LocalHouseholdRepository(this._store, this._userId);
+  /// Створює дім, у якому [owner] — власник і єдиний учасник.
+  Future<void> create({required String name, required Member owner});
 
-  final LocalStore _store;
-  final String _userId;
+  /// Приєднує [me] до дому за кодом. Кидає [DataFailure], якщо коду немає.
+  Future<void> join({required String code, required Member me});
 
-  String get _key => 'household.$_userId';
+  Future<void> rename(String householdId, String name);
 
-  @override
-  Future<Household?> load() async {
-    final json = await _store.readJson(_key);
-    return json is Map
-        ? Household.fromJson(json.cast<String, Object?>())
-        : null;
-  }
+  /// Видаляє учасника; його завдання залишаються без виконавця (FR-07).
+  Future<void> removeMember(String householdId, String memberId);
 
-  @override
-  Future<void> save(Household household) =>
-      _store.writeJson(_key, household.toJson());
-
-  @override
-  Future<void> clear() => _store.remove(_key);
+  /// Оновлює ім'я користувача у списку учасників.
+  Future<void> updateMemberName(String householdId, Member me);
 }

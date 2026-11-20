@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// Правила Firebase Storage для ДімПлан (лабораторна №6).
+// Фото профілю: users/{uid}/avatar/{fileName}
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/avatar/{fileName} {
+      // Аватари бачать усі автентифіковані користувачі (учасники дому).
+      allow read: if request.auth != null;
+      // Завантажувати й видаляти може лише власник: JPEG або PNG до 5 МБ (FR-05).
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png)');
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Решта сховища закрита.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

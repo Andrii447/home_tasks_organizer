@@ -8,7 +8,6 @@ import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
 import '../../data/models.dart';
 import '../../state/household_controller.dart';
-import '../../state/tasks_controller.dart';
 
 /// FR-07: інформація про домогосподарство та його учасників.
 /// Стан — HouseholdController (Provider).
@@ -27,7 +26,10 @@ class MyHouseholdScreen extends StatelessWidget {
       context: context,
       builder: (_) => _RenameDialog(initial: household.name),
     );
-    if (result != null && result.isNotEmpty) await controller.rename(result);
+    if (result == null || result.isEmpty) return;
+    if (!await controller.rename(result) && context.mounted) {
+      _toast(context, controller.error ?? 'Не вдалося змінити назву');
+    }
   }
 
   static Future<void> _copyCode(BuildContext context, String code) async {
@@ -37,7 +39,6 @@ class MyHouseholdScreen extends StatelessWidget {
 
   static Future<void> _remove(BuildContext context, Member member) async {
     final households = context.read<HouseholdController>();
-    final tasks = context.read<TasksController>();
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -60,8 +61,10 @@ class MyHouseholdScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await households.removeMember(member.id);
-    await tasks.unassignMember(member.id);
+    // Репозиторій також знімає виконавця з його завдань (FR-07).
+    if (!await households.removeMember(member.id) && context.mounted) {
+      _toast(context, households.error ?? 'Не вдалося видалити учасника');
+    }
   }
 
   static String _membersLabel(int n) {

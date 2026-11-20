@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -10,6 +12,10 @@ import 'core/services/analytics_service.dart';
 import 'core/services/error_reporter.dart';
 import 'core/storage/local_store.dart';
 import 'data/repositories/firebase_auth_repository.dart';
+import 'data/repositories/firebase_file_storage_repository.dart';
+import 'data/repositories/firestore_household_repository.dart';
+import 'data/repositories/firestore_task_repository.dart';
+import 'data/repositories/firestore_user_repository.dart';
 import 'firebase_options.dart';
 
 /// DSN проєкту Sentry передається під час запуску (файл env.json не в git):
@@ -31,8 +37,13 @@ Future<void> _runDimPlan() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  final db = FirebaseFirestore.instance;
   final app = DimPlanApp(
     auth: FirebaseAuthRepository(FirebaseAuth.instance, reporter: _errors),
+    households: FirestoreHouseholdRepository(db),
+    tasks: FirestoreTaskRepository(db),
+    users: FirestoreUserRepository(db),
+    files: FirebaseFileStorageRepository(FirebaseStorage.instance),
     analytics: FirebaseAnalyticsService(FirebaseAnalytics.instance),
     errors: _errors,
     store: SharedPreferencesStore(),

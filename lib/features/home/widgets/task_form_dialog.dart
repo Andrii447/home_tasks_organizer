@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_format.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../data/models.dart';
+import '../../../state/tasks_controller.dart';
 
 /// Діалог створення/редагування завдання (FR-09, FR-10, FR-11).
-/// Повертає заповнене завдання або `null`, якщо користувач скасував.
-Future<HomeTask?> showTaskFormDialog(
+/// Збереження виконує TasksController: поки йде запит, кнопка показує
+/// індикатор, а в разі помилки діалог лишається відкритим із повідомленням.
+/// Повертає true, якщо завдання збережено.
+Future<bool?> showTaskFormDialog(
   BuildContext context, {
   required List<Member> members,
   HomeTask? task,
 }) {
-  return showDialog<HomeTask>(
+  return showDialog<bool>(
     context: context,
     builder: (_) => _TaskFormDialog(task: task, members: members),
   );
@@ -61,24 +65,36 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
     if (picked != null) setState(() => _dueDate = picked);
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-    final title = _title.text.trim();
-    Navigator.of(context).pop(
-      HomeTask(
-        id: widget.task?.id ?? 'new_${DateTime.now().microsecondsSinceEpoch}',
-        title: title,
-        description: _description.text.trim(),
-        dueDate: _dueDate,
-        status: _status,
-        assigneeId: _assigneeId,
-      ),
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<TasksController>().clearSaveError(),
     );
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final original = widget.task;
+    final task = HomeTask(
+      // Порожній id — нове завдання: id видасть Firestore.
+      id: original?.id ?? '',
+      title: _title.text.trim(),
+      description: _description.text.trim(),
+      dueDate: _dueDate,
+      status: _status,
+      assigneeId: _assigneeId,
+      createdBy: original?.createdBy,
+      createdAt: original?.createdAt,
+    );
+    final ok = await context.read<TasksController>().save(task);
+    if (ok && mounted) Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final tasks = context.watch<TasksController>();
 
     final dateField = _LabeledField(
       label: 'Строк виконання',
@@ -224,6 +240,10 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
                     onChanged: (v) => setState(() => _status = v ?? _status),
                   ),
                 ),
+                if (tasks.saveError != null) ...[
+                  const SizedBox(height: 16),
+                  FormMessage(tasks.saveError!),
+                ],
                 const SizedBox(height: 20),
                 const Divider(height: 1),
                 const SizedBox(height: 20),
@@ -232,10 +252,16 @@ class _TaskFormDialogState extends State<_TaskFormDialog> {
                   children: [
                     SecondaryButton(
                       label: 'Скасувати',
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: tasks.isSaving
+                          ? null
+                          : () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 12),
-                    PrimaryButton(label: 'Зберегти', onPressed: _save),
+                    PrimaryButton(
+                      label: 'Зберегти',
+                      onPressed: _save,
+                      loading: tasks.isSaving,
+                    ),
                   ],
                 ),
               ],

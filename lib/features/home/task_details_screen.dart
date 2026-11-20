@@ -143,8 +143,13 @@ class TaskDetailsScreen extends StatelessWidget {
                           ),
                       ],
                       selected: {task.status},
-                      onSelectionChanged: (s) =>
-                          tasks.changeStatus(task, s.first),
+                      onSelectionChanged: tasks.isSaving
+                          ? null
+                          : (s) => TaskActions.changeStatus(
+                              context,
+                              task,
+                              s.first,
+                            ),
                     ),
                   ],
                 ),

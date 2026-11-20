@@ -13,7 +13,8 @@ enum AuthEvent { signedIn, sessionRestored, signedOut }
 /// запиту входу/реєстрації та помилка останнього запиту.
 class AuthController extends ChangeNotifier {
   AuthController(this._repo, this._analytics) {
-    _sub = _repo.authStateChanges().listen(_onUser);
+    // userChanges: вхід/вихід, а також зміна імені чи фото профілю.
+    _sub = _repo.userChanges().listen(_onUser);
   }
 
   final AuthRepository _repo;

@@ -8,7 +8,6 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/widgets.dart';
 import '../../state/auth_controller.dart';
 import '../../state/household_controller.dart';
-import '../../state/tasks_controller.dart';
 
 /// FR-06: створення домогосподарства або приєднання за кодом.
 class HouseholdSetupScreen extends StatefulWidget {
@@ -31,29 +30,33 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
     super.dispose();
   }
 
-  bool _busy = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<HouseholdController>().clearError(),
+    );
+  }
 
-  /// Створює дім або приєднує до наявного й заповнює демо-завдання
-  /// (до інтеграції Firestore). Після цього MainShell покаже головну.
+  /// Створює дім у Firestore або приєднує до наявного за кодом.
+  /// Після успіху MainShell сам покаже головну сторінку.
   Future<void> _continue(
     GlobalKey<FormState> form, {
     required bool join,
   }) async {
-    if (_busy || !form.currentState!.validate()) return;
     final households = context.read<HouseholdController>();
-    final tasks = context.read<TasksController>();
-    final uid = context.read<AuthController>().user!.uid;
-    setState(() => _busy = true);
+    if (households.isBusy || !form.currentState!.validate()) return;
     if (join) {
       await households.join(_code.text.trim());
     } else {
       await households.create(_name.text.trim());
     }
-    await tasks.seedDemo(uid);
   }
 
   @override
   Widget build(BuildContext context) {
+    final households = context.watch<HouseholdController>();
+    final busy = households.isBusy;
     final create = _SetupCard(
       title: 'Створити дім',
       subtitle: 'Створіть новий простір для спільних домашніх справ.',
@@ -65,7 +68,7 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
         onSubmitted: (_) => _continue(_createForm, join: false),
       ),
       buttonLabel: 'Створити',
-      loading: _busy,
+      loading: busy,
       onPressed: () => _continue(_createForm, join: false),
     );
     final join = _SetupCard(
@@ -80,7 +83,7 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
         onSubmitted: (_) => _continue(_joinForm, join: true),
       ),
       buttonLabel: 'Приєднатися',
-      loading: _busy,
+      loading: busy,
       onPressed: () => _continue(_joinForm, join: true),
     );
 
@@ -112,9 +115,13 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
               );
             },
           ),
+          if (households.error != null) ...[
+            const SizedBox(height: AppSpacing.large),
+            FormMessage(households.error!),
+          ],
           const SizedBox(height: AppSpacing.large),
           TextButton(
-            onPressed: _busy
+            onPressed: busy
                 ? null
                 : () => context.read<AuthController>().signOut(),
             child: const Text('Вийти з акаунту'),

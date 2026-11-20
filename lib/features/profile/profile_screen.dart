@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/services/analytics_service.dart';
@@ -8,6 +9,8 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/widgets.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/file_storage_repository.dart';
+import '../../data/repositories/user_repository.dart';
 import '../../state/auth_controller.dart';
 import '../../state/profile_controller.dart';
 import 'avatar_picker_dialog.dart';
@@ -22,6 +25,8 @@ class ProfileScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => ProfileController(
         context.read<AuthRepository>(),
+        context.read<UserRepository>(),
+        context.read<FileStorageRepository>(),
         context.read<AnalyticsService>(),
       ),
       child: const _ProfileView(),
@@ -83,6 +88,26 @@ class _ProfileViewState extends State<_ProfileView> {
     if (ok && mounted) _toast('Зміни збережено');
   }
 
+  /// FR-05: вибір фото з пристрою та завантаження у Firebase Storage.
+  Future<void> _uploadPhoto() async {
+    final profile = context.read<ProfileController>();
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    final error = await profile.uploadPhoto(bytes, _contentType(file));
+    if (mounted) _toast(error ?? 'Фото завантажено');
+  }
+
+  /// Тип файлу: з метаданих або за розширенням.
+  static String? _contentType(XFile file) {
+    final mime = file.mimeType;
+    if (mime != null && mime.isNotEmpty) return mime;
+    final name = file.name.toLowerCase();
+    if (name.endsWith('.png')) return 'image/png';
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+    return null;
+  }
+
   Future<void> _changePhoto() async {
     final profile = context.read<ProfileController>();
     final user = profile.user;
@@ -132,12 +157,26 @@ class _ProfileViewState extends State<_ProfileView> {
     final avatar = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        UserAvatar(name: user.name, photoUrl: user.photoUrl, radius: 40),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            UserAvatar(name: user.name, photoUrl: user.photoUrl, radius: 40),
+            if (profile.isUploadingPhoto)
+              const SizedBox.square(
+                dimension: 84,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+          ],
+        ),
         const SizedBox(height: 16),
         SecondaryButton(
-          label: 'Змінити фото',
-          icon: Icons.image_outlined,
-          onPressed: _changePhoto,
+          label: 'Завантажити фото',
+          icon: Icons.upload_outlined,
+          onPressed: profile.isUploadingPhoto ? null : _uploadPhoto,
+        ),
+        TextButton(
+          onPressed: profile.isUploadingPhoto ? null : _changePhoto,
+          child: const Text('Обрати готове або за посиланням'),
         ),
       ],
     );

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum TaskStatus {
   planned('Заплановано'),
   inProgress('У процесі'),
@@ -17,62 +19,56 @@ class Member {
 
   final String id;
   final String name;
-
-  Map<String, Object?> toJson() => {'id': id, 'name': name};
-
-  factory Member.fromJson(Map<String, Object?> json) =>
-      Member(id: json['id'] as String, name: json['name'] as String);
 }
 
-/// Домогосподарство (FR-06, FR-07). Власник може змінювати назву й
-/// видаляти учасників.
+/// Домогосподарство (FR-06, FR-07): документ households/{id}.
 class Household {
   const Household({
+    required this.id,
     required this.name,
     required this.inviteCode,
     required this.ownerId,
-    required this.members,
+    required this.memberIds,
+    required this.memberNames,
   });
 
+  final String id;
   final String name;
   final String inviteCode;
   final String ownerId;
-  final List<Member> members;
+
+  /// Список id учасників — використовується правилами доступу Firestore.
+  final List<String> memberIds;
+
+  /// Імена учасників (uid → ім'я) для відображення без читання профілів.
+  final Map<String, String> memberNames;
 
   bool isOwner(String? userId) => userId == ownerId;
 
-  Member? memberById(String? id) {
-    for (final m in members) {
-      if (m.id == id) return m;
-    }
-    return null;
-  }
+  List<Member> get members => [
+    for (final id in memberIds)
+      Member(id: id, name: memberNames[id] ?? 'Учасник'),
+  ];
 
-  Household copyWith({String? name, List<Member>? members}) => Household(
-    name: name ?? this.name,
-    inviteCode: inviteCode,
-    ownerId: ownerId,
-    members: members ?? this.members,
-  );
+  Member? memberById(String? id) => id != null && memberIds.contains(id)
+      ? Member(id: id, name: memberNames[id] ?? 'Учасник')
+      : null;
 
-  Map<String, Object?> toJson() => {
-    'name': name,
-    'inviteCode': inviteCode,
-    'ownerId': ownerId,
-    'members': [for (final m in members) m.toJson()],
-  };
-
-  factory Household.fromJson(Map<String, Object?> json) => Household(
-    name: json['name'] as String,
-    inviteCode: json['inviteCode'] as String,
-    ownerId: json['ownerId'] as String,
-    members: [
-      for (final m in json['members'] as List)
-        Member.fromJson((m as Map).cast<String, Object?>()),
-    ],
-  );
+  factory Household.fromFirestore(String id, Map<String, dynamic> data) =>
+      Household(
+        id: id,
+        name: data['name'] as String? ?? '',
+        inviteCode: data['inviteCode'] as String? ?? '',
+        ownerId: data['ownerId'] as String? ?? '',
+        memberIds: List<String>.from(data['memberIds'] as List? ?? const []),
+        memberNames: Map<String, String>.from(
+          data['memberNames'] as Map? ?? const {},
+        ),
+      );
 }
 
+/// Домашнє завдання (FR-09 – FR-11): документ
+/// households/{householdId}/tasks/{id}.
 class HomeTask {
   const HomeTask({
     required this.id,
@@ -81,6 +77,8 @@ class HomeTask {
     required this.status,
     this.description = '',
     this.assigneeId,
+    this.createdBy,
+    this.createdAt,
   });
 
   final String id;
@@ -89,6 +87,11 @@ class HomeTask {
   final DateTime? dueDate;
   final TaskStatus status;
   final String? assigneeId;
+  final String? createdBy;
+  final DateTime? createdAt;
+
+  /// Ще не збережене у Firestore (id видає база під час створення).
+  bool get isNew => id.isEmpty;
 
   /// Прострочене: строк минув, а завдання ще не виконане.
   bool get isOverdue {
@@ -102,32 +105,35 @@ class HomeTask {
     ).isBefore(DateTime(now.year, now.month, now.day));
   }
 
-  HomeTask copyWith({TaskStatus? status}) => HomeTask(
+  HomeTask copyWith({TaskStatus? status, String? createdBy}) => HomeTask(
     id: id,
     title: title,
     description: description,
     dueDate: dueDate,
     status: status ?? this.status,
     assigneeId: assigneeId,
+    createdBy: createdBy ?? this.createdBy,
+    createdAt: createdAt,
   );
 
-  Map<String, Object?> toJson() => {
-    'id': id,
+  /// Поля, які користувач може змінювати.
+  Map<String, Object?> toFirestore() => {
     'title': title,
     'description': description,
-    'dueDate': dueDate?.toIso8601String(),
+    'dueDate': dueDate == null ? null : Timestamp.fromDate(dueDate!),
     'status': status.name,
     'assigneeId': assigneeId,
   };
 
-  factory HomeTask.fromJson(Map<String, Object?> json) => HomeTask(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    description: (json['description'] as String?) ?? '',
-    dueDate: json['dueDate'] == null
-        ? null
-        : DateTime.parse(json['dueDate'] as String),
-    status: TaskStatus.fromName(json['status'] as String?),
-    assigneeId: json['assigneeId'] as String?,
-  );
+  factory HomeTask.fromFirestore(String id, Map<String, dynamic> data) =>
+      HomeTask(
+        id: id,
+        title: data['title'] as String? ?? '',
+        description: data['description'] as String? ?? '',
+        dueDate: (data['dueDate'] as Timestamp?)?.toDate(),
+        status: TaskStatus.fromName(data['status'] as String?),
+        assigneeId: data['assigneeId'] as String?,
+        createdBy: data['createdBy'] as String?,
+        createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      );
 }

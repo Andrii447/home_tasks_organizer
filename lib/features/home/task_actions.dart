@@ -12,26 +12,19 @@ import 'widgets/task_form_dialog.dart';
 /// Дії над завданнями, спільні для головної сторінки й екрана перегляду.
 abstract final class TaskActions {
   static Future<void> create(BuildContext context) async {
-    final tasks = context.read<TasksController>();
     final members = context.read<HouseholdController>().members;
-    final created = await showTaskFormDialog(context, members: members);
-    if (created != null) await tasks.add(created);
+    await showTaskFormDialog(context, members: members);
   }
 
   static Future<void> edit(BuildContext context, HomeTask task) async {
-    final tasks = context.read<TasksController>();
     final members = context.read<HouseholdController>().members;
-    final updated = await showTaskFormDialog(
-      context,
-      members: members,
-      task: task,
-    );
-    if (updated != null) await tasks.update(updated);
+    await showTaskFormDialog(context, members: members, task: task);
   }
 
   /// Повертає true, якщо завдання видалено.
   static Future<bool> delete(BuildContext context, HomeTask task) async {
     final tasks = context.read<TasksController>();
+    final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -51,8 +44,28 @@ abstract final class TaskActions {
       ),
     );
     if (ok != true) return false;
-    await tasks.delete(task.id);
-    return true;
+    final deleted = await tasks.delete(task);
+    if (!deleted) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(tasks.saveError ?? 'Не вдалося видалити')),
+      );
+    }
+    return deleted;
+  }
+
+  /// Зміна статусу з повідомленням у разі помилки.
+  static Future<void> changeStatus(
+    BuildContext context,
+    HomeTask task,
+    TaskStatus status,
+  ) async {
+    final tasks = context.read<TasksController>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (!await tasks.changeStatus(task, status)) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(tasks.saveError ?? 'Не вдалося змінити статус')),
+      );
+    }
   }
 
   static void open(BuildContext context, HomeTask task) {

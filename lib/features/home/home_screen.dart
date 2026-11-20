@@ -47,7 +47,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                     PrimaryButton(
                       label: 'Спробувати ще',
-                      onPressed: tasks.load,
+                      onPressed: tasks.retry,
                     ),
                   ],
                 ),
