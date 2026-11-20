@@ -43,6 +43,10 @@ class UserAvatar extends StatelessWidget {
         child: Image.network(
           url,
           fit: BoxFit.cover,
+          // У вебі Flutter завантажує картинку через fetch, а сервер
+          // (зокрема Firebase Storage без CORS-налаштувань) може це
+          // заборонити. Тоді показуємо її звичайним тегом <img>.
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
           errorBuilder: (_, _, _) => fallback,
           loadingBuilder: (context, child, progress) => progress == null
               ? child

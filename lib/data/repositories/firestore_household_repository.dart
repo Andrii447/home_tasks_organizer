@@ -60,11 +60,18 @@ class FirestoreHouseholdRepository implements HouseholdRepository {
 
     out = StreamController<Household?>(
       onListen: () {
+        // includeMetadataChanges: отримуємо й момент, коли сервер
+        // підтвердив запис. Поки householdId лише в локальній чернетці
+        // (дім ще не створено на сервері), правила не дадуть прочитати
+        // документ дому — тому чекаємо підтвердження.
         userSub = _users
             .doc(uid)
-            .snapshots()
+            .snapshots(includeMetadataChanges: true)
             .listen(
-              (snap) => watchHome(snap.data()?['householdId'] as String?),
+              (snap) {
+                if (snap.metadata.hasPendingWrites) return;
+                watchHome(snap.data()?['householdId'] as String?);
+              },
               onError: (Object e, StackTrace st) =>
                   out.addError(DataFailure.from(e), st),
             );
